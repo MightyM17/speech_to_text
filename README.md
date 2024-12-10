@@ -7,6 +7,15 @@ capabilities of the underlying platform in Flutter. It supports Android, iOS and
 target use cases for this library are commands and short phrases, not continuous spoken
 conversion or always on listening. 
 
+## Recording Steps
+Clone this repo, 6.4.1-record branch
+
+pubspec.yaml
+  speech_to_text:
+    path: ../../../speech_to_text/speech_to_text
+
+Using Android Studio to explore the device using device manager, you will find recording.amr in the cache folder.
+
 ## Contents
 
 ### [Plugin](https://github.com/csdcorp/speech_to_text/tree/main/speech_to_text)
