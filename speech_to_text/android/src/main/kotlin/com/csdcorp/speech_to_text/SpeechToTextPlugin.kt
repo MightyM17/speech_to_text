@@ -42,6 +42,10 @@ import org.json.JSONObject
 import java.util.*
 import java.util.concurrent.Executors
 
+import java.io.InputStream
+import java.io.File
+import java.io.FileOutputStream
+
 
 enum class SpeechToTextErrors {
     multipleRequests,
@@ -306,21 +310,11 @@ public class SpeechToTextPlugin :
         setupRecognizerIntent(languageTag, partialResults, listenMode, onDevice )
         handler.post {
             run {
-                if(speechRecognizer == null){
-                    try {
-//                        recognizerIntent?.putExtra("android.speech.extra.GET_AUDIO_FORMAT", "audio/AMR")
-//                        recognizerIntent?.putExtra("android.speech.extra.GET_AUDIO", true)
-                        recognizerIntent?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_HISTORY)
-                        currentActivity?.startActivityForResult(recognizerIntent, resultRequestCode)
-                    } catch ( e : ActivityNotFoundException){
-
-                        Toast.makeText(currentActivity, "Please install \"Speech Services by Google\" to run this service.", Toast.LENGTH_LONG).show();
-                        val googleIntent = Intent(
-                            Intent.ACTION_VIEW,
-                            Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.tts")
-                        )
-                        currentActivity?.startActivity(googleIntent)
-                    }
+                if (true) {
+                    recognizerIntent?.putExtra("android.speech.extra.GET_AUDIO_FORMAT", "audio/AMR")
+                    recognizerIntent?.putExtra("android.speech.extra.GET_AUDIO", true)
+                    recognizerIntent?.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_HISTORY)
+                    currentActivity?.startActivityForResult(recognizerIntent, resultRequestCode)
                 } else {
                     speechRecognizer?.startListening(recognizerIntent)
                 }
@@ -493,16 +487,25 @@ public class SpeechToTextPlugin :
         }
     }
     
-    private fun updateResults(speechBundle: Bundle?, isFinal: Boolean) {
-        if (isDuplicateFinal( isFinal )) {
+    private fun updateResults(speechBundle: Bundle?, isFinal: Boolean, outputFilePath: String?, dialogMode: Boolean?) {
+        if (isDuplicateFinal(isFinal)) {
             debugLog("Discarding duplicate final")
             return
         }
-        val userSaid = speechBundle?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+
+        val userSaid = if(true) {
+            speechBundle?.getStringArrayList(RecognizerIntent.EXTRA_RESULTS)
+        } else {
+            speechBundle?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+        }
         if (null != userSaid && userSaid.isNotEmpty()) {
             val speechResult = JSONObject()
             speechResult.put("finalResult", isFinal)
-            val confidence = speechBundle.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
+            val confidence = if(true) {
+                speechBundle?.getFloatArray(RecognizerIntent.EXTRA_CONFIDENCE_SCORES)
+            }else {
+                speechBundle?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
+            }
             val alternates = JSONArray()
             for (resultIndex in 0..userSaid.size - 1) {
                 val speechWords = JSONObject()
@@ -515,6 +518,7 @@ public class SpeechToTextPlugin :
                 alternates.put(speechWords)
             }
             speechResult.put("alternates", alternates)
+            speechResult.put("audioPath", outputFilePath)
             val jsonResult = speechResult.toString()
             debugLog("Calling results callback")
             resultSent = true
@@ -526,11 +530,31 @@ public class SpeechToTextPlugin :
     }
 
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
         when (requestCode) {
             resultRequestCode -> {
                 if (resultCode == Activity.RESULT_OK && data != null) {
-                    updateActivityResults(data.extras, true)
+
+                    val filestream: InputStream? = data.data?.let { currentActivity?.getContentResolver()?.openInputStream(it) }
+
+                    val outputFile = File(currentActivity?.cacheDir, "recording.amr");
+
+                    var outputFilePath: String?;
+                    outputFilePath = "/storage/emulated/0/Download/recording.amr";
+                    if (outputFile.exists()) {
+                        outputFile.delete()
+                    } else {
+                        outputFile.parentFile?.mkdirs()
+                    }
+                    val outputStream = FileOutputStream(outputFile)
+                    filestream.use { input ->
+                        outputStream.use { output ->
+                            input?.copyTo(output)
+                            outputFilePath = outputFile.absolutePath;
+                        }
+                    }
+
+                    updateResults(data.extras, true, outputFilePath, true)
                     notifyListening(isRecording = false)
                 } else {
                     onError(resultCode)
@@ -784,8 +808,8 @@ public class SpeechToTextPlugin :
     }
 
 
-    override fun onPartialResults(results: Bundle?) = updateResults(results, false)
-    override fun onResults(results: Bundle?) = updateResults(results, true)
+    override fun onPartialResults(results: Bundle?) = updateResults(results, false, "/storage/emulated/0/Download/recording.amr", true)
+    override fun onResults(results: Bundle?) = updateResults(results, true, "/storage/emulated/0/Download/recording.amr", true)
     override fun onEndOfSpeech() = notifyListening(isRecording = false)
 
     override fun onError(errorCode: Int) {
